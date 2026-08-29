@@ -1,14 +1,19 @@
 from ultralytics import YOLO
 
-print("Loading object detection model...")
+print("Loading enhanced object detection model...")
 
-object_model = YOLO("yolo11n.pt")
+model = YOLO("yolo11n.pt")
+
+print("Object detection model loaded!")
 
 
 def detect_objects(frame):
-    results = object_model(
+
+    # Higher image size helps with small and distant objects
+    results = model(
         frame,
-        conf=0.30,
+        conf=0.15,
+        imgsz=1280,
         verbose=False
     )
 

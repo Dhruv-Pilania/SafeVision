@@ -1,6 +1,6 @@
-def check_crowd(person_count):
+def detect_crowd_from_people(person_count, crowd_threshold=7):
 
-    if person_count >= 5:
+    if person_count >= crowd_threshold:
         return True
 
     return False

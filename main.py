@@ -2,155 +2,224 @@ import cv2
 import time
 
 from device import open_camera, read_frame, close_camera
-from detection import detect_people
+from object_detection import detect_objects
+from crowd_detection import detect_crowd_from_people
 from fall_detection import detect_fall
 from fire_detection import detect_fire_smoke
-from crowd_detection import check_crowd
-from object_detection import detect_objects
 
+
+# =====================================================
+# OBJECT COLOURS
+# =====================================================
+
+PERSON_COLOR = (0, 255, 0)
+OBJECT_COLOR = (255, 0, 0)
+FIRE_COLOR = (0, 0, 255)
+SMOKE_COLOR = (128, 128, 128)
+
+
+# =====================================================
+# MAIN SYSTEM
+# =====================================================
 
 def main():
 
-    print("=================================")
-    print("Starting AI Safety System...")
-    print("=================================")
+    print("=" * 50)
+    print("SENTINE AI SAFETY SYSTEM")
+    print("=" * 50)
 
     cap = open_camera(0)
 
     if cap is None:
-        print("ERROR: Camera could not start.")
+        print("ERROR: Could not open camera.")
         return
 
-    fire_alert_start = None
+    print("Camera started successfully!")
+    print("Press Q to close.")
+
 
     while True:
 
-       
+        # =============================================
+        # READ CAMERA
+        # =============================================
+
         frame = read_frame(cap)
 
         if frame is None:
-            print("Could not read camera frame.")
+            print("ERROR: Could not read frame.")
             break
-        
-   
 
+
+        # =============================================
+        # RESIZE FOR BETTER PROCESSING
+        # =============================================
+
+        original_height, original_width = frame.shape[:2]
+
+        frame = cv2.resize(
+            frame,
+            (1280, 720)
+        )
+
+
+        # =============================================
+        # OBJECT DETECTION
+        # =============================================
 
         person_count = 0
+        detected_objects = []
 
         try:
 
-            person_results = detect_people(frame)
+            object_results = detect_objects(frame)
 
-            for result in person_results:
+            for result in object_results:
 
                 if result.boxes is None:
                     continue
 
                 for box in result.boxes:
 
+                    # Get coordinates
                     x1, y1, x2, y2 = map(
                         int,
                         box.xyxy[0].tolist()
                     )
 
-                    confidence = float(
-                        box.conf[0]
+                    # Get confidence
+                    confidence = float(box.conf[0])
+
+                    # Get class
+                    class_id = int(box.cls[0])
+
+                    # Get object name
+                    class_name = model_name(
+                        result,
+                        class_id
                     )
 
-                    person_count += 1
+                    class_name = class_name.lower()
+
+
+                    # ---------------------------------
+                    # COUNT PEOPLE
+                    # ---------------------------------
+
+                    if class_name == "person":
+
+                        person_count += 1
+
+                        color = PERSON_COLOR
+
+                    else:
+
+                        color = OBJECT_COLOR
+
+
+                    # ---------------------------------
+                    # SAVE DETECTED OBJECT
+                    # ---------------------------------
+
+                    detected_objects.append(
+                        class_name
+                    )
+
+
+                    # ---------------------------------
+                    # DRAW BOX
+                    # ---------------------------------
 
                     cv2.rectangle(
                         frame,
                         (x1, y1),
                         (x2, y2),
-                        (0, 255, 0),
+                        color,
                         2
+                    )
+
+
+                    # ---------------------------------
+                    # OBJECT LABEL
+                    # ---------------------------------
+
+                    label = (
+                        f"{class_name.upper()} "
+                        f"{confidence:.0%}"
                     )
 
                     cv2.putText(
                         frame,
-                        f"PERSON {confidence:.0%}",
+                        label,
                         (x1, max(30, y1 - 10)),
                         cv2.FONT_HERSHEY_SIMPLEX,
-                        0.7,
-                        (0, 255, 0),
+                        0.6,
+                        color,
                         2
                     )
 
+
         except Exception as e:
-            print("Person detection error:", e)
+
+            print("Object detection error:", e)
 
 
+        # =============================================
+        # CROWD DETECTION
+        # =============================================
 
-        cv2.putText(
-            frame,
-            f"People: {person_count}",
-            (20, 40),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (0, 255, 0),
-            2
+        crowd_detected = detect_crowd_from_people(
+            person_count,
+            crowd_threshold=5
         )
 
 
+        # =============================================
+        # FALL DETECTION
+        # =============================================
 
-        crowd_detected = check_crowd(person_count)
-
-        if crowd_detected:
-
-            cv2.putText(
-                frame,
-                "CROWD ALERT",
-                (20, 80),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 0, 255),
-                3
-            )
-
-
-     
+        fall_detected = False
+        fall_time = 0
 
         try:
 
-            fall_detected, fall_time = detect_fall(frame)
+            fall_result = detect_fall(frame)
 
-            if fall_time > 0:
+            # Support your previous fall module format
+            if isinstance(fall_result, tuple):
 
-                cv2.putText(
-                    frame,
-                    f"FALL SUSPECT: {int(fall_time)} sec",
-                    (20, 120),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (0, 165, 255),
-                    2
+                fall_detected = fall_result[0]
+
+                if len(fall_result) > 1:
+                    fall_time = fall_result[1]
+
+            elif isinstance(fall_result, dict):
+
+                fall_detected = fall_result.get(
+                    "fall_detected",
+                    False
                 )
 
-            if fall_detected:
+            else:
 
-                cv2.putText(
-                    frame,
-                    "FALL CONFIRMED!",
-                    (20, 160),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1,
-                    (0, 0, 255),
-                    3
-                )
+                fall_detected = bool(fall_result)
+
 
         except Exception as e:
+
             print("Fall detection error:", e)
 
 
+        # =============================================
+        # FIRE AND SMOKE DETECTION
+        # =============================================
 
+        fire_detected = False
+        smoke_detected = False
 
         try:
 
             fire_results = detect_fire_smoke(frame)
-
-            fire_detected = False
-            smoke_detected = False
 
             for result in fire_results:
 
@@ -164,23 +233,20 @@ def main():
                         box.xyxy[0].tolist()
                     )
 
-                    confidence = float(
-                        box.conf[0]
-                    )
+                    confidence = float(box.conf[0])
 
-                    class_id = int(
-                        box.cls[0]
-                    )
+                    class_id = int(box.cls[0])
 
-                    class_name = fire_model_name(
+                    class_name = model_name(
                         result,
                         class_id
-                    )
-
-                    class_name = class_name.lower()
+                    ).lower()
 
 
+                    # ---------------------------------
                     # FIRE
+                    # ---------------------------------
+
                     if "fire" in class_name:
 
                         fire_detected = True
@@ -189,22 +255,25 @@ def main():
                             frame,
                             (x1, y1),
                             (x2, y2),
-                            (0, 0, 255),
+                            FIRE_COLOR,
                             4
                         )
 
                         cv2.putText(
                             frame,
-                            f"FIRE! {confidence:.0%}",
-                            (x1, max(40, y1 - 10)),
+                            f"FIRE {confidence:.0%}",
+                            (x1, max(40, y1 - 15)),
                             cv2.FONT_HERSHEY_SIMPLEX,
-                            1,
-                            (0, 0, 255),
+                            0.8,
+                            FIRE_COLOR,
                             3
                         )
 
 
+                    # ---------------------------------
                     # SMOKE
+                    # ---------------------------------
+
                     elif "smoke" in class_name:
 
                         smoke_detected = True
@@ -213,98 +282,197 @@ def main():
                             frame,
                             (x1, y1),
                             (x2, y2),
-                            (128, 128, 128),
+                            SMOKE_COLOR,
                             3
                         )
 
                         cv2.putText(
                             frame,
-                            f"SMOKE! {confidence:.0%}",
-                            (x1, max(40, y1 - 10)),
+                            f"SMOKE {confidence:.0%}",
+                            (x1, max(40, y1 - 15)),
                             cv2.FONT_HERSHEY_SIMPLEX,
                             0.8,
-                            (200, 200, 200),
-                            2
+                            SMOKE_COLOR,
+                            3
                         )
-
-
-
-            if fire_detected:
-
-                if fire_alert_start is None:
-                    fire_alert_start = time.time()
-
-                # Pulsing / flashing effect
-                pulse = int(
-                    abs(
-                        255 * (
-                            time.time() % 1
-                        )
-                    )
-                )
-
-                overlay = frame.copy()
-
-                cv2.rectangle(
-                    overlay,
-                    (0, 0),
-                    (frame.shape[1], frame.shape[0]),
-                    (0, 0, 255),
-                    10
-                )
-
-                frame = cv2.addWeighted(
-                    overlay,
-                    0.5,
-                    frame,
-                    0.5,
-                    0
-                )
-
-                cv2.putText(
-                    frame,
-                    "!!! FIRE ALERT !!!",
-                    (
-                        int(frame.shape[1] / 2) - 200,
-                        100
-                    ),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1.5,
-                    (0, 0, 255),
-                    5
-                )
-
-
-            if smoke_detected:
-
-                cv2.putText(
-                    frame,
-                    "!!! SMOKE ALERT !!!",
-                    (20, 200),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1,
-                    (100, 100, 255),
-                    3
-                )
 
 
         except Exception as e:
 
-            print("Fire detection error:", e)
+            print("Fire/smoke detection error:", e)
 
 
- 
+        # =============================================
+        # DISPLAY PEOPLE COUNT
+        # =============================================
+
+        cv2.putText(
+            frame,
+            f"PEOPLE: {person_count}",
+            (20, 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.9,
+            PERSON_COLOR,
+            2
+        )
+
+
+        # =============================================
+        # DISPLAY CROWD ALERT
+        # =============================================
+
+        if crowd_detected:
+
+            cv2.putText(
+                frame,
+                f"CROWD ALERT: {person_count} PEOPLE",
+                (20, 80),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.9,
+                FIRE_COLOR,
+                3
+            )
+
+
+        # =============================================
+        # DISPLAY FALL ALERT
+        # =============================================
+
+        if fall_detected:
+
+            cv2.putText(
+                frame,
+                "FALL DETECTED!",
+                (20, 120),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                FIRE_COLOR,
+                3
+            )
+
+        elif fall_time > 0:
+
+            cv2.putText(
+                frame,
+                f"FALL SUSPECT: {int(fall_time)} sec",
+                (20, 120),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (0, 165, 255),
+                2
+            )
+
+
+        # =============================================
+        # DISPLAY FIRE ALERT
+        # =============================================
+
+        if fire_detected:
+
+            # Flashing border
+            pulse = int(time.time() * 3) % 2
+
+            if pulse == 0:
+
+                cv2.rectangle(
+                    frame,
+                    (5, 5),
+                    (
+                        frame.shape[1] - 5,
+                        frame.shape[0] - 5
+                    ),
+                    FIRE_COLOR,
+                    15
+                )
+
+
+            cv2.putText(
+                frame,
+                "!!! FIRE ALERT !!!",
+                (300, 70),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.2,
+                FIRE_COLOR,
+                4
+            )
+
+
+        # =============================================
+        # DISPLAY SMOKE ALERT
+        # =============================================
+
+        if smoke_detected:
+
+            cv2.putText(
+                frame,
+                "!!! SMOKE DETECTED !!!",
+                (300, 120),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                SMOKE_COLOR,
+                3
+            )
+
+
+        # =============================================
+        # SHOW OBJECT SUMMARY
+        # =============================================
+
+        unique_objects = list(
+            dict.fromkeys(detected_objects)
+        )
+
+        summary = (
+            "OBJECTS: " +
+            ", ".join(unique_objects[:6])
+        )
+
+        if len(unique_objects) > 0:
+
+            cv2.putText(
+                frame,
+                summary.upper(),
+                (20, frame.shape[0] - 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                2
+            )
+
+
+        # =============================================
+        # SYSTEM TITLE
+        # =============================================
+
+        cv2.putText(
+            frame,
+            "SENTINE AI SAFETY SYSTEM",
+            (20, frame.shape[0] - 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 255),
+            2
+        )
+
+
+        # =============================================
+        # SHOW OUTPUT
+        # =============================================
 
         cv2.imshow(
-            "AI SAFETY SYSTEM",
+            "Sentine AI - Safety Monitoring",
             frame
         )
 
 
-     
+        # =============================================
+        # QUIT
+        # =============================================
+
         key = cv2.waitKey(1) & 0xFF
 
         if key == ord("q"):
+
             print("Closing system...")
             break
 
@@ -312,7 +480,11 @@ def main():
     close_camera(cap)
 
 
-def fire_model_name(result, class_id):
+# =====================================================
+# GET MODEL CLASS NAME
+# =====================================================
+
+def model_name(result, class_id):
 
     try:
 
@@ -322,6 +494,10 @@ def fire_model_name(result, class_id):
 
         return "unknown"
 
+
+# =====================================================
+# START PROGRAM
+# =====================================================
 
 if __name__ == "__main__":
 
