@@ -10,20 +10,14 @@ pose_model = YOLO("yolo11n-pose.pt")
 print("Enhanced pose model loaded!")
 
 
-# =====================================================
-# MEMORY
-# =====================================================
 
 fall_start_time = None
 previous_center_y = None
 previous_time = None
 
 
-# =====================================================
-# SETTINGS
-# =====================================================
 
-FALL_CONFIRMATION_TIME = 3.0
+FALL_CONFIRMATION_TIME = 30.0
 
 # Person must become significantly horizontal
 LYING_RATIO = 1.25
@@ -76,30 +70,19 @@ def detect_fall(frame):
             box_confidence = float(box.conf[0])
 
 
-            # =========================================
-            # CONDITION 1:
-            # PERSON MUST LOOK HORIZONTAL
-            # =========================================
 
             is_horizontal = (
                 width > height * LYING_RATIO
             )
 
 
-            # =========================================
-            # GET BODY CENTER
-            # =========================================
 
             center_y = (
                 y1 + y2
             ) / 2
 
 
-            # =========================================
-            # CONDITION 2:
-            # CHECK BODY POSITION CHANGE
-            # =========================================
-
+         
             sudden_downward_movement = False
 
             if (
@@ -129,18 +112,9 @@ def detect_fall(frame):
             previous_time = current_time
 
 
-            # =========================================
-            # FALL DETECTION LOGIC
-            # =========================================
+         
 
-            # A person is considered fallen only if:
-            #
-            # 1. The body is horizontal
-            # AND
-            # 2. A sudden downward movement happened
-            #
-            # OR the person remains strongly horizontal
-
+            
             if (
                 is_horizontal
                 and box_confidence >= MIN_CONFIDENCE
@@ -149,9 +123,7 @@ def detect_fall(frame):
                 fallen_person_detected = True
 
 
-    # =================================================
-    # FALL TIMER
-    # =================================================
+ 
 
     if fallen_person_detected:
 
@@ -165,7 +137,7 @@ def detect_fall(frame):
         )
 
 
-        # Final alert after 3 seconds
+       
         if elapsed_time >= FALL_CONFIRMATION_TIME:
 
             return True, elapsed_time
@@ -173,9 +145,6 @@ def detect_fall(frame):
         return False, elapsed_time
 
 
-    # =================================================
-    # RESET
-    # =================================================
 
     else:
 

@@ -1,6 +1,18 @@
-def detect_crowd_from_people(person_count, crowd_threshold=7):
+# crowd_detection.py
 
-    if person_count >= crowd_threshold:
-        return True
+def check_crowd(person_count, threshold=8):
+    """
+    Returns True when the number of detected people
+    reaches or exceeds the crowd threshold.
+    """
 
-    return False
+    try:
+        person_count = int(person_count)
+
+        if person_count >= threshold:
+            return True
+
+        return False
+
+    except (ValueError, TypeError):
+        return False
